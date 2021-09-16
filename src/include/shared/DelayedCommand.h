@@ -15,7 +15,7 @@
 
 #ifndef DELAY_COMMAND_FILE
 
-#define DELAY_COMMAND_FILE "delay.txt"
+#define DELAY_COMMAND_FILE "0:/delay.txt"
 #endif
 
 #ifndef DELAY_MAX_ESTTC_SIZE
