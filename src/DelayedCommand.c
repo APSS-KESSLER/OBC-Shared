@@ -33,7 +33,10 @@ static osMailQId submitQueueId;
 
 static FIL *fp = NULL;
 
-static void queueCommand(QueuedCommand_t *command) {
+/**
+ * Writes the given command to end of the command file
+ */
+static bool writeCommandToFile(QueuedCommand_t *command) {
     FRESULT fresult = f_lseek(fp, f_size(fp));
     if (fresult != FR_OK) {
         goto error;
@@ -45,13 +48,17 @@ static void queueCommand(QueuedCommand_t *command) {
         goto error;
     }
 
-    return;
+    return true;
 
 error:
     ERR_LOG_ERROR_F("Unable to write command to file (%d)", fresult);
+    return false;
 }
 
-static void executeCommand(QueuedCommand_t *command) {
+/**
+ * Executes a command and removes it from the command file
+ */
+static bool executeCommand(QueuedCommand_t *command) {
     EXT(DELAY_executeCommand)(command->command);
 
     // Remove the command from the executable list
@@ -83,13 +90,13 @@ static void executeCommand(QueuedCommand_t *command) {
                 goto error;
             }
 
-            return;
+            return true;
         }
 
         fresult = f_write(fp, &copy, sizeof(*command), &length);
         if (length != sizeof(*command)) {
             ERR_LOG_ERROR("Unable to write to command file");
-            return;
+            return false;
         }
 
         if (fresult != FR_OK) {
@@ -99,8 +106,12 @@ static void executeCommand(QueuedCommand_t *command) {
 
 error:
     ERR_LOG_ERROR_F("Unable to remove executed command (%d)", fresult);
+    return false;
 }
 
+/**
+ * Returns the head of the command file (the next command to be executed)
+ */
 static bool findNextCommand(QueuedCommand_t *command) {
     FRESULT fresult = f_rewind(fp);
     if (fresult != FR_OK) {
@@ -120,6 +131,9 @@ error:
     return false;
 }
 
+/**
+ * Returns true if a given command should be executed
+ */
 static bool shouldExecute(QueuedCommand_t *command) {
     RTC_TimeTypeDef time;
     RTC_DateTypeDef date;
@@ -144,6 +158,9 @@ static bool shouldExecute(QueuedCommand_t *command) {
     return time.Seconds >= command->time.Seconds;
 }
 
+/**
+ * Opens the command file and starts and SD region
+ */
 static bool openFile(void) {
     if (EXT(CORE_enterSDRegion)(osWaitForever) != osOK) {
         return false;
@@ -159,15 +176,29 @@ static bool openFile(void) {
     return true;
 }
 
-static void closeFile(void) {
+/**
+ * Closes the command file and exists the SD region
+ */
+static bool closeFile(void) {
     FRESULT fresult = f_close(fp);
     if (fresult != FR_OK) {
         ERR_LOG_ERROR_F("Unable to close command file (%d)", fresult);
     }
 
-    EXT(CORE_exitSDRegion)();
+    return EXT(CORE_exitSDRegion)() == osOK && fresult == FR_OK;
 }
 
+/**
+ * This task function has two jobs:
+ *  - Waiting for queue commands to be submitted
+ *  - Executing commands when their timer's expire
+ *
+ * Each loop it waits for 1 second to pass if there is no command ready,
+ * or zero seconds if there is, or a mail item to be submitted.
+ *
+ * If a mail item is submitted it queues that command into the file. If there
+ * is a command ready to be executed execute it.
+ */
 static void taskFunction(void const *arg) {
     submitQueueId = osMailCreate(osMailQ(submitQueue), threadId);
     if (submitQueueId == NULL) {
@@ -195,14 +226,18 @@ static void taskFunction(void const *arg) {
                 continue;
             }
 
+            // Try and continue on error here to execute the command anyway, even if the file
+            // open fails.
             openFile();
             executeCommand(&nextCommand);
             break;
 
         case osEventMail:
             // We have a command to queue
-            openFile();
-            queueCommand((QueuedCommand_t *) event.value.p);
+            if (openFile()) {
+                writeCommandToFile((QueuedCommand_t *) event.value.p);
+            }
+
             osMailFree(submitQueueId, event.value.p);
             break;
 
@@ -216,6 +251,24 @@ static void taskFunction(void const *arg) {
     }
 }
 
+/**
+ * Writes a null-terminated command string into a command object, checking the length first.
+ */
+static bool encodeCommand(QueuedCommand_t *encoded, char const *command, RTC_TimeTypeDef const *time, RTC_DateTypeDef const *date) {
+    // Include the null byte in the copy
+    size_t length = strlen(command) + 1;
+    if (length > DELAY_MAX_ESTTC_SIZE) {
+        ERR_LOG_ERROR_F("ESTTC command string too long (%ul)", length);
+        return false;
+    }
+
+    memcpy(encoded->command, command, length);
+    encoded->time = *time;
+    encoded->date = *date;
+
+    return true;
+}
+
 osThreadId EXT(DELAY_createThread)(void) {
     threadId = osThreadCreate(osThread(commandHandlingThread), NULL);
     if (threadId == NULL) {
@@ -225,29 +278,59 @@ osThreadId EXT(DELAY_createThread)(void) {
     return threadId;
 }
 
-void EXT(DELAY_queueCommand)(char const *command, RTC_TimeTypeDef const *time, RTC_DateTypeDef const *date) {
+bool EXT(DELAY_queueCommandFromTask)(char const *command, RTC_TimeTypeDef const *time, RTC_DateTypeDef const *date) {
     osStatus osResult;
-
-    // Include the null byte in the copy
-    size_t length = strlen(command) + 1;
-    if (length > DELAY_MAX_ESTTC_SIZE) {
-        ERR_LOG_ERROR_F("ESTTC command string too long (%ul)", length);
-        return;
-    }
 
     QueuedCommand_t *mail = osMailAlloc(submitQueueId, DELAY_QUEUE_TIMEOUT);
     if (mail == NULL) {
         ERR_LOG_ERROR("Failed to submit command");
-        return;
+        return false;
     }
 
-    memcpy(mail->command, command, length);
-    mail->time = *time;
-    mail->date = *date;
+    if (!encodeCommand(mail, command, time, date)) {
+        goto freeMail;
+    }
 
     osResult = osMailPut(submitQueueId, mail);
     if (osResult != osOK) {
         ERR_LOG_ERROR_F("Failed to submit command (%d)", osResult);
-        return;
+        goto freeMail;
     }
+
+    return true;
+
+freeMail:
+    osResult = osMailFree(submitQueueId, mail);
+
+    if (osResult != osOK) {
+        ERR_LOG_ERROR_F("Failed to free mail (%d)", osResult);
+    }
+
+    return true;
+}
+
+bool EXT(DELAY_queueCommandDirectly)(char const *command, RTC_TimeTypeDef const *time, RTC_DateTypeDef const *date) {
+    QueuedCommand_t queuedCommand;
+
+    if (!encodeCommand(&queuedCommand, command, time, date) || !openFile()) {
+        return false;
+    }
+
+    bool result = writeCommandToFile(&queuedCommand);
+
+    return closeFile() && result;
+}
+
+bool EXT(DELAY_pollTask)(void) {
+    if (!openFile()) {
+        return false;
+    }
+
+    QueuedCommand_t command;
+    bool result;
+    if (findNextCommand(&command) && shouldExecute(&command)) {
+        result = executeCommand(&command);
+    }
+
+    return closeFile() && result;
 }

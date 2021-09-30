@@ -56,15 +56,45 @@ osThreadId EXT(DELAY_createThread)(void);
 * @param[input]     char const *command - The ESTTC command to execute
 * @param[input]     RTC_TimeTypeDef const *time - The time to execute the command after
 * @param[input]     RTC_DateTypeDef const *date - The date to execute the command after
-* @return           nothing
-* @note             If the time specified has already passed the command will be immediately
-*                   executed.
-* @note             If the SD card is inaccessible for some reason the command list will
-*                   be stored in memory
+* @return           true if the call succeeded
+* @note             If the time specified has already passed the command will be executed the next
+*                   poll, or task loop cycle.
 * @note             The date and time must be stored in BCD format
+* @note             This function may be executed from any task safely. If it is known this function
+*                   call will be made from the same task running DELAY_pollTask(void) then
+*                   DELAY_queueCommandDirectly(char const *, RTC_TimeTypeDef const *, RTC_DateTypeDef const *)
+*                   should be used instead.
 *~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
-void EXT(DELAY_queueCommand)(char const *command, RTC_TimeTypeDef const *time, RTC_DateTypeDef const *date);
+bool EXT(DELAY_queueCommandFromTask)(char const *command, RTC_TimeTypeDef const *time, RTC_DateTypeDef const *date);
+
+/*!
+*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+* @brief Queues a command for execution in the future
+*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+* @param[input]     char const *command - The ESTTC command to execute
+* @param[input]     RTC_TimeTypeDef const *time - The time to execute the command after
+* @param[input]     RTC_DateTypeDef const *date - The date to execute the command after
+* @return           true if the call succeeded
+* @note             If the time specified has already passed the command will be executed the next
+*                   poll, or task loop cycle.
+* @note             The date and time must be stored in BCD format
+* @note             This function may only be called from the task that will execute
+*                   DELAY_pollTask(void) next.
+*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
+bool EXT(DELAY_queueCommandDirectly)(char const *command, RTC_TimeTypeDef const *time, RTC_DateTypeDef const *date);
+
+/*!
+*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+* @brief Executes a task if one is ready to be executed
+*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+* @return           true if the command succeeded
+* @note             This command is not needed if DELAY_createThread is used to handle task
+*                   execution.
+*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
+bool EXT(DELAY_pollTask)(void);
 
 /*!
 *~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
