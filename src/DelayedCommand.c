@@ -31,19 +31,19 @@ typedef struct {
 static osMailQDef(submitQueue, 1, QueuedCommand_t);
 static osMailQId submitQueueId;
 
-static FIL *fp = NULL;
+static FIL fp;
 
 /**
  * Writes the given command to end of the command file
  */
 static bool writeCommandToFile(QueuedCommand_t *command) {
-    FRESULT fresult = f_lseek(fp, f_size(fp));
+    FRESULT fresult = f_lseek(&fp, f_size(&fp));
     if (fresult != FR_OK) {
         goto error;
     }
 
     UINT length;
-    fresult = f_write(fp, command, sizeof(*command), &length);
+    fresult = f_write(&fp, command, sizeof(*command), &length);
     if (length != sizeof(*command)) {
         goto error;
     }
@@ -67,17 +67,17 @@ static bool executeCommand(QueuedCommand_t *command) {
         QueuedCommand_t copy;
         UINT length;
 
-        fresult = f_lseek(fp, sizeof(*command) * (i + 1));
+        fresult = f_lseek(&fp, sizeof(*command) * (i + 1));
         if (fresult != FR_OK) {
             goto error;
         }
 
-        fresult = f_read(fp, &copy, sizeof(*command), &length);
+        fresult = f_read(&fp, &copy, sizeof(*command), &length);
         if (fresult != FR_OK) {
             goto error;
         }
 
-        fresult = f_lseek(fp, sizeof(*command) * i);
+        fresult = f_lseek(&fp, sizeof(*command) * i);
         if (fresult != FR_OK) {
             goto error;
         }
@@ -85,7 +85,7 @@ static bool executeCommand(QueuedCommand_t *command) {
         // We are done, EOF. The read-write head is now at the end of the last written
         // command. Truncate the file here.
         if (length != sizeof(*command)) {
-            fresult = f_truncate(fp);
+            fresult = f_truncate(&fp);
             if (fresult != FR_OK) {
                 goto error;
             }
@@ -93,7 +93,7 @@ static bool executeCommand(QueuedCommand_t *command) {
             return true;
         }
 
-        fresult = f_write(fp, &copy, sizeof(*command), &length);
+        fresult = f_write(&fp, &copy, sizeof(*command), &length);
         if (length != sizeof(*command)) {
             ERR_LOG_ERROR("Unable to write to command file");
             return false;
@@ -113,13 +113,13 @@ error:
  * Returns the head of the command file (the next command to be executed)
  */
 static bool findNextCommand(QueuedCommand_t *command) {
-    FRESULT fresult = f_rewind(fp);
+    FRESULT fresult = f_rewind(&fp);
     if (fresult != FR_OK) {
         goto error;
     }
 
     UINT length;
-    fresult = f_read(fp, command, sizeof(*command), &length);
+    fresult = f_read(&fp, command, sizeof(*command), &length);
     if (fresult != FR_OK) {
         goto error;
     }
@@ -166,7 +166,7 @@ static bool openFile(void) {
         return false;
     }
 
-    FRESULT fresult = f_open(fp, DELAY_COMMAND_FILE, FA_READ | FA_WRITE | FA_OPEN_ALWAYS);
+    FRESULT fresult = f_open(&fp, DELAY_COMMAND_FILE, FA_READ | FA_WRITE | FA_OPEN_ALWAYS);
     if (fresult != FR_OK) {
         ERR_LOG_ERROR_F("Unable to open command file (%d)", fresult);
         EXT(CORE_exitSDRegion)();
@@ -180,7 +180,7 @@ static bool openFile(void) {
  * Closes the command file and exists the SD region
  */
 static bool closeFile(void) {
-    FRESULT fresult = f_close(fp);
+    FRESULT fresult = f_close(&fp);
     if (fresult != FR_OK) {
         ERR_LOG_ERROR_F("Unable to close command file (%d)", fresult);
     }
