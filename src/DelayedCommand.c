@@ -13,6 +13,7 @@
 #include <fatfs.h>
 
 #include "shared/Error.h"
+#include "ESTTCBridge.h"
 
 #define DELAY_STACK_SIZE 1024
 
@@ -206,48 +207,49 @@ static void taskFunction(void const *arg) {
         return;
     }
 
-    bool hasNextCommand = false;
+    bool hasNextCommand;
     QueuedCommand_t nextCommand;
 
+    // Wait until the SD card is ready
+    osDelay(osKernelSysTickFrequency);
+
+    openFile();
+
     while (true) {
-        uint32_t wait = osWaitForever;
-
-        if (hasNextCommand) {
-            wait = shouldExecute(&nextCommand) ? 0 : osKernelSysTickFrequency;
-        }
-
-        osEvent event = osMailGet(submitQueueId, wait);
-
-        switch (event.status) {
-        case osOK:
-        case osEventTimeout:
-            if (!hasNextCommand || !shouldExecute(&nextCommand)) {
-                // We waited the maximum time period, or there was no command. Wait again
-                continue;
-            }
-
-            // Try and continue on error here to execute the command anyway, even if the file
-            // open fails.
-            openFile();
-            executeCommand(&nextCommand);
-            break;
-
-        case osEventMail:
-            // We have a command to queue
-            if (openFile()) {
-                writeCommandToFile((QueuedCommand_t *) event.value.p);
-            }
-
-            osMailFree(submitQueueId, event.value.p);
-            break;
-
-        default:
-            ERR_LOG_ERROR_F("Failed to wait (%d)", event.status);
-            return;
-        }
-
         hasNextCommand = findNextCommand(&nextCommand);
         closeFile();
+
+        if (!hasNextCommand || !shouldExecute(&nextCommand)) {
+            osEvent event = osMailGet(submitQueueId, osKernelSysTickFrequency);
+
+            openFile();
+
+            switch (event.status) {
+            case osOK:
+            case osEventTimeout:
+                break;
+
+            case osEventMail:
+                // We have a command to queue
+                if (!hasNextCommand) {
+                    // There is no pending command, use this one
+                    hasNextCommand = true;
+                    nextCommand = *(QueuedCommand_t *) event.value.p;
+                }
+
+                writeCommandToFile((QueuedCommand_t *) event.value.p);
+
+                osMailFree(submitQueueId, event.value.p);
+                break;
+
+            default:
+                ERR_LOG_ERROR_F("Failed to wait (%d)", event.status);
+                return;
+            }
+        } else {
+            openFile();
+            executeCommand(&nextCommand);
+        }
     }
 }
 
