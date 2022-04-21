@@ -47,7 +47,7 @@ HAL_StatusTypeDef EXT(CORE_getTime)(RTC_TimeTypeDef *time, RTC_DateTypeDef *date
 
 /*!
 *~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-* @brief Enters an SD card access region (MUST BE IMPLEMENTED BY LIBRARY CONSUMER)
+* @brief Enters an exclusive access region (MUST BE IMPLEMENTED BY LIBRARY CONSUMER)
 *~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 * @param[input]     uint32_t millisec - How long to wait to access the region, osWaitForever indicates
 *                                       that the call should wait indefinitely. A value of zero indicates
@@ -59,17 +59,17 @@ HAL_StatusTypeDef EXT(CORE_getTime)(RTC_TimeTypeDef *time, RTC_DateTypeDef *date
 * @note             This must be reentrant capable.
 *~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
-osStatus EXT(CORE_enterSDRegion)(uint32_t millisec);
+osStatus EXT(CORE_enterExclusive)(uint32_t millisec);
 
 /*!
 *~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-* @brief Exits an SD card access region (MUST BE IMPLEMENTED BY LIBRARY CONSUMER)
+* @brief Exits an exclusive access region (MUST BE IMPLEMENTED BY LIBRARY CONSUMER)
 *~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 * @return           osStatus - osOK if the call succeeded
 *                              osErrorResource the region was never entered
 *                              any other value if the call failed for another reason
 *~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
-osStatus EXT(CORE_exitSDRegion)(void);
+osStatus EXT(CORE_exitExclusive)(void);
 
 #endif /* SHARED_H_ */

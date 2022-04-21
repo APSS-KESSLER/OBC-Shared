@@ -163,14 +163,14 @@ static bool shouldExecute(QueuedCommand_t *command) {
  * Opens the command file and starts and SD region
  */
 static bool openFile(void) {
-    if (EXT(CORE_enterSDRegion)(osWaitForever) != osOK) {
+    if (EXT(CORE_enterExclusive)(osWaitForever) != osOK) {
         return false;
     }
 
     FRESULT fresult = f_open(&fp, DELAY_COMMAND_FILE, FA_READ | FA_WRITE | FA_OPEN_ALWAYS);
     if (fresult != FR_OK) {
         ERR_LOG_ERROR_F("Unable to open command file (%d)", fresult);
-        EXT(CORE_exitSDRegion)();
+        EXT(CORE_exitExclusive)();
         return false;
     }
 
@@ -186,7 +186,7 @@ static bool closeFile(void) {
         ERR_LOG_ERROR_F("Unable to close command file (%d)", fresult);
     }
 
-    return EXT(CORE_exitSDRegion)() == osOK && fresult == FR_OK;
+    return EXT(CORE_exitExclusive)() == osOK && fresult == FR_OK;
 }
 
 /**
